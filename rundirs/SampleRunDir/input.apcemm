@@ -88,7 +88,11 @@ Turn on ice growth?     : T
 Do we have MET input?   : F
  => Met file            : /path/to/met/input
  => Init T from MET?    : F
+ => Interpolate T?      : F
  => Init H2O form MET?  : F
+ => Interpolate H2O?    : F
+ => Init shear from met?: F
+ => Interpolate shear?  : F
 - OR -------------------+
 Impose moist layer depth: T
  => Moist layer depth[m]: 200

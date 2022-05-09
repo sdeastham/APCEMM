@@ -125,7 +125,8 @@ endif
 LINK := $(LINK)
 
 # Add path to APCEMM's library folder
-LINK := -L$(LIB_DIR) -L/home/aa681/src/trusty_libs/usr/lib -L/home/aa681/src/trusty_libs/usr/lib/x86_64-linux-gnu
+#LINK := -L$(LIB_DIR) -L/home/aa681/src/trusty_libs/usr/lib -L/home/aa681/src/trusty_libs/usr/lib/x86_64-linux-gnu
+LINK := -L$(LIB_DIR)
 
 # Define any libraries to link into executable: use -llibname option
 LINK := $(LINK) $(LDLIBS) -lstdc++
@@ -166,7 +167,12 @@ ifeq ($(COMPILER),g++)
     #                        Intel Sandy-Bridge Xeon (e.g. E5-2680)
     #  -mfpmath=sse         Use SSE extensions
     #  -funroll-loops       Enable loop unrolling
-    OPT              := -O3 -funroll-loops -limf -march=native -msse
+    #OPT              := -O3 -funroll-loops -limf -march=native -msse
+    ifdef MACHINE_SPECIFIC
+        OPT              := -O3 -funroll-loops -march=native -msse
+    else
+        OPT              := -O3 -funroll-loops
+    endif
   endif
   
   # Pick compiler options for debug run or regular run 
@@ -199,6 +205,7 @@ ifeq ($(COMPILER),g++)
   #ifeq ($(shell [[ "$(TRACEBACK)" =~ $(REGEXP) ]] && echo true),true)
   #  CXXFLAGS          += 
   #endif
+  CXXFLAGS += -g
 
   # Use ring structure?
   REGEXP             :=(^[Yy]|^[Yy][Ee][Ss])
@@ -216,9 +223,14 @@ ifeq ($(COMPILER),g++)
   CXXFLAGS            += $(USER_DEFS)
 
   # Include options (i.e. for finding *.h* files)
-  INCLUDE := -I$(ROOT_DIR)/include -I/home/aa681/src/trusty_libs/usr/include
+  #INCLUDE := -I$(ROOT_DIR)/include -I/home/aa681/src/trusty_libs/usr/include
+  INCLUDE := -I$(ROOT_DIR)/include
 
 endif
+
+# Add NetCDF
+INCLUDE += -I$(shell nc-config --includedir)
+LINK += $(shell nc-config --libs)
 
 # Set the standard compiler variables
 GCC  := $(COMPILE_CMD) $(CXXFLAGS) $(INCLUDE) $(LINK)
