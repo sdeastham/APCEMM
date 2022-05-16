@@ -13,6 +13,8 @@
 
 #include "EPM/Integrate.hpp"
 
+
+
 namespace EPM
 {
 
@@ -20,7 +22,7 @@ namespace EPM
                    RealDouble fixArray[], RealDouble aerArray[][2], const Aircraft &AC, const Emission &EI, \
                    RealDouble &Ice_rad, RealDouble &Ice_den, RealDouble &Soot_den, RealDouble &H2O_mol, \
                    RealDouble &SO4g_mol, RealDouble &SO4l_mol, AIM::Aerosol &SO4Aer, AIM::Aerosol &IceAer, \
-                   RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY )
+                   RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY, std::string micro_data_out )
     {
 
         /* Get mean vortex displacement in [m] */
@@ -36,10 +38,10 @@ namespace EPM
         /*          [ K ]     =              [ K/km ] *  [ m ]  * [ km/m ] 
          * The minus sign is because delta_z is the distance pointing down */
 
-        RunMicrophysics( temperature_K, pressure_Pa, relHumidity_w, varArray, fixArray, aerArray, AC, EI, delta_T_ad, delta_T, \
-                         Ice_rad, Ice_den, Soot_den, H2O_mol, SO4g_mol, SO4l_mol, SO4Aer, IceAer, Area, Ab0, Tc0, CHEMISTRY );
+        int EPM_RC = RunMicrophysics( temperature_K, pressure_Pa, relHumidity_w, varArray, fixArray, aerArray, AC, EI, delta_T_ad, delta_T, \
+                                      Ice_rad, Ice_den, Soot_den, H2O_mol, SO4g_mol, SO4l_mol, SO4Aer, IceAer, Area, Ab0, Tc0, CHEMISTRY, micro_data_out );
 
-        return EPM_SUCCESS;
+        return EPM_RC;
 
     } /* End of Integrate */
 
@@ -47,7 +49,7 @@ namespace EPM
                          RealDouble fixArray[], RealDouble aerArray[][2], const Aircraft &AC, const Emission &EI, \
                          RealDouble delta_T_ad, RealDouble delta_T, RealDouble &Ice_rad, RealDouble &Ice_den, \
                          RealDouble &Soot_den, RealDouble &H2O_mol, RealDouble &SO4g_mol, RealDouble &SO4l_mol, \
-                         AIM::Aerosol &SO4Aer, AIM::Aerosol &IceAer, RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY )
+                         AIM::Aerosol &SO4Aer, AIM::Aerosol &IceAer, RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY, std::string micro_data_out )
     {
     
         RealDouble relHumidity_i_Amb, relHumidity_i_postVortex, relHumidity_i_Final;
@@ -447,7 +449,8 @@ namespace EPM
         Vector_1D obs_Time;
 
         /* EPM::streamingObserver observer( obs_Var, obs_Time, EPM_ind, "/home/fritzt/CAPCEMM/data/Micro.out", 2 ); */
-        EPM::streamingObserver observer( obs_Var, obs_Time, EPM_ind, "/net/d13/data/aa681/statistical_global_contrails/Simulations/C-APCEMM/rundirs/SampleRunDir/Micro.out", 2 );
+        //EPM::streamingObserver observer( obs_Var, obs_Time, EPM_ind, "/net/d13/data/aa681/statistical_global_contrails/Simulations/C-APCEMM/rundirs/SampleRunDir/Micro.out", 2 );
+        EPM::streamingObserver observer( obs_Var, obs_Time, EPM_ind, micro_data_out, 2 );
 
         /* Creating ode's right hand side */
         gas_aerosol_rhs rhs( temperature_K, pressure_Pa, delta_T, H2O_amb * physConst::kB * temperature_K / pressure_Pa * 1.0E+06, \
@@ -558,9 +561,10 @@ namespace EPM
         }
         /* Output variables */
         /* Check if contrail is water supersaturated at some point during formation */
-        if ( !observer.checkwatersat() ) {
+        if ( !CHEMISTRY && !observer.checkwatersat() ) {
             std::cout << "EndSim: Never reaches water saturation... ending simulation" << std::endl;
-            exit(0);
+            //exit(0);
+            return EPM_EARLY;
         }
 
         /* Persistent contrail */
@@ -580,7 +584,7 @@ namespace EPM
              Soot_den = PartDens_3mins;
              H2O_mol  = H2OMol_3mins;
 	         std::cout << "No persistent contrail..." << std::endl;
-             if ( !CHEMISTRY ) exit(0);
+             if ( !CHEMISTRY ) return EPM_EARLY;
 
         }
 	    std::cout << "Ice_den=" << Ice_den << std::endl;

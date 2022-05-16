@@ -39,6 +39,8 @@ namespace EPM
 
     static const int EPM_SUCCESS = 1;
     static const int EPM_FAILURE = 0;
+    // Stopped early (no ice)
+    static const int EPM_EARLY   = 2;
 
     /* Vortex sinking timescales, taken from Unterstrasser et al., 2008 */
     const RealDouble t_Vortex_0 = 8.00E+00;
@@ -72,13 +74,13 @@ namespace EPM
                    RealDouble fixArray[], RealDouble aerArray[][2], const Aircraft &AC, const Emission &EI, \
                    RealDouble &Ice_rad, RealDouble &Ice_den, RealDouble &Soot_den, RealDouble &H2O_mol, \
                    RealDouble &SO4g_mol, RealDouble &SO4l_mol, AIM::Aerosol &SO4Aer, AIM::Aerosol &IceAer, \
-                   RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY );
+                   RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY, std::string micro_data_out );
     int RunMicrophysics( RealDouble &temperature_K, RealDouble pressure_Pa, RealDouble relHumidity_w, \
                          RealDouble varArray[], RealDouble fixArray[], RealDouble aerArray[][2], \
                          const Aircraft &AC, const Emission &EI, RealDouble delta_T_ad, RealDouble delta_T, \
                          RealDouble &Ice_rad, RealDouble &Ice_den, RealDouble &Soot_den, RealDouble &H2O_mol, \
                          RealDouble &SO4g_mol, RealDouble &SO4l_mol, AIM::Aerosol &SO4Aer, AIM::Aerosol &IceAer, \
-                         RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY );
+                         RealDouble &Area, RealDouble &Ab0, RealDouble &Tc0, const bool CHEMISTRY, std::string micro_data_out );
     RealDouble dT_Vortex( const RealDouble time, const RealDouble delta_T, bool deriv = 0 );
     RealDouble dilutionRatio( const RealDouble time );
     RealDouble depositionRate( const RealDouble r, const RealDouble T, const RealDouble P, const RealDouble H2O, \

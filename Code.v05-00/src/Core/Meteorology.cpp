@@ -97,44 +97,44 @@ Meteorology::Meteorology( const OptInput &USERINPUT,      \
 
     if ( USERINPUT.MET_LOADMET ) {
 
+        // Currently relies on heavy met data preprocessing. File MUST have 
+        // a "pressure" dimension, along with the following variables all
+        // using that dimension:
+        //  - pressure [hPa]
+        //  - altitude [km]
+        //  - temperature [K]
+        //  - relative_humidity [w.r.t water as %]
+        //  - relative_humidity_ice [w.r.t ice as %]
+        //TODO: Rewrite to work with native ERA5/GEOS5 output
+
         /* Met is loaded in */
         /* TYPE = 0; */
         TYPE = 3; /* TYPE = 0 means met for every time step */
 
         /* Set up for error messages */
         static const int NC_ERR = 2;
-        NcError err( NcError::silent_nonfatal );
+        //NcError err( NcError::silent_nonfatal );
 
 
         /* Open the netcdf file for read access */
-        NcFile dataFile( USERINPUT.MET_FILENAME.c_str(), NcFile::ReadOnly  );
-	if ( !dataFile.is_valid() ) {
-	    std::cout << "Netcdf file is not valid" << std::endl;
-	}
+        NcFile dataFile( USERINPUT.MET_FILENAME.c_str(), NcFile::read  );
 
         /* Identify the length of variables in input file */
         int var_len;
         int var_var_len = 1;
-        NcVar* var_len_ncVar;
-        if ( !(var_len_ncVar = dataFile.get_var( "var_length" )) ) {
-            std::cout << "In Meteorology:: Meteorology: getting variable length pointer" << std::endl;
-        }
-        var_len_ncVar->get(&var_len, var_var_len);
+        //NcVar var_len_ncVar = dataFile.getVar("var_length");
+        //var_len_ncVar.getVar(var_len);
+        NcDim zDim = dataFile.getDim("pressure");
+        var_len = zDim.getSize();
 
         /* Extract pressure and altitude from input file */
         //int var_len = 5117;
         float altitude_user[var_len], pressure_user[var_len];
 	altitude_store_.assign( var_len, 0.0E+00 );
-        NcVar* altitude_ncVar;
-        NcVar* pressure_ncVar;
-        if ( !(altitude_ncVar = dataFile.get_var( "altitude" )) ) {
-            std::cout << "In Meteorology:: Meteorology: getting altitude pointer" << std::endl;
-        }
-        if ( !(pressure_ncVar = dataFile.get_var( "pressure" )) ) {
-            std::cout << "In Meteorology:: Meteorology: getting pressure pointer" << std::endl;
-        }
-        altitude_ncVar->get(altitude_user, var_len);
-        pressure_ncVar->get(pressure_user, var_len);
+        NcVar altitude_ncVar = dataFile.getVar("altitude");
+        NcVar pressure_ncVar = dataFile.getVar("pressure");
+        altitude_ncVar.getVar(altitude_user);
+        pressure_ncVar.getVar(pressure_user);
         int i;
         for ( i = 0; i < var_len; i++ ) {
             pressure_user[i] *= 100.0;
@@ -169,20 +169,19 @@ Meteorology::Meteorology( const OptInput &USERINPUT,      \
 
         if ( USERINPUT.MET_LOADTEMP ) {
             /* !@#$ */
+            // SDE 2022-05-07: Not quite sure what this all does. My guess (?) is that
+            // it is designed to read in multiple time slices, but this doesn't seem
+            // like it would be able to do that.
 
             /* Define temperature input dimension */
-            NcVar* temp_ncVar;
-
-	    /* Give back a pointer to the requested NcVar */
-	    if ( !(temp_ncVar = dataFile.get_var( "temperature" )) ) {
-	        std::cout << "In Meteorology::Meteorology: getting temperature pointer" << std::endl;
-	    }
+            NcVar temp_ncVar = dataFile.getVar("temperature");
 
             /* Extract the temperature data */
 	    float temperature_store_temp[var_len][8];
-            if ( !(temp_ncVar->get(&temperature_store_temp[0][0], var_len, 8)) ) {   
-                std::cout << "In Meteorology::Meteorology: extracting temperature" << std::endl;                                                              
-            }
+            temp_ncVar.getVar(temperature_store_temp);
+            //if ( !(temp_ncVar->get(&temperature_store_temp[0][0], var_len, 8)) ) {   
+            //    std::cout << "In Meteorology::Meteorology: extracting temperature" << std::endl;                                                              
+            //}
 
             /* Identify temperature at above pressure */
             temp_user = temperature_store_temp[i_Zp][0];    
@@ -230,17 +229,13 @@ Meteorology::Meteorology( const OptInput &USERINPUT,      \
             /* !@#$ */
 
             /* Define temperature input dimension */
-            NcVar* relhumid_ncVar;
+            NcVar relhumid_ncVar = dataFile.getVar("relative_humidity");
+            relhumid_ncVar.getVar(relhumid_user);
 
-	    /* Give back a pointer to the requested NcVar */
-	    if ( !(relhumid_ncVar = dataFile.get_var( "relative_humidity" )) ) {
-	        std::cout << "In Meteorology::Meteorology: getting relative humidity pointer" << std::endl;
-	    }
-
-            /* Extract the temperature data */
-            if ( !(relhumid_ncVar->get(relhumid_user, var_len)) ) {
-                std::cout << "In Meteorology::Meteorology: extracting relative humidity" << std::endl;
-            }
+            ///* Extract the temperature data */
+            //if ( !(relhumid_ncVar->get(relhumid_user, var_len)) ) {
+            //    std::cout << "In Meteorology::Meteorology: extracting relative humidity" << std::endl;
+            //}
 
             /* Identify temperature at above pressure */
             RHw_user = relhumid_user[i_Zp];
@@ -269,19 +264,23 @@ Meteorology::Meteorology( const OptInput &USERINPUT,      \
 
         if ( USERINPUT.MET_LOADSHEAR ) {
 	    /* !?*# */
-            
-	    /* Define temperature input dimension */
-            NcVar* temp_ncVar;
-
-	    /* Give back a pointer to the requested NcVar */
-	    if ( !(temp_ncVar = dataFile.get_var( "shear" )) ) {
-	        std::cout << "In Meteorology::Meteorology: getting temperature pointer" << std::endl;
-	    }
-
+           
 	    float shear_store_temp[var_len][8];
-            if ( !(temp_ncVar->get(&shear_store_temp[0][0], var_len, 8)) ) {   
-                std::cout << "In Meteorology::Meteorology: extracting temperature" << std::endl;                                                              
-            }
+            NcVar temp_ncVar = dataFile.getVar("shear");
+            temp_ncVar.getVar(shear_store_temp);
+            
+	    ///* Define temperature input dimension */
+            //NcVar* temp_ncVar;
+
+	    ///* Give back a pointer to the requested NcVar */
+	    //if ( !(temp_ncVar = dataFile.get_var( "shear" )) ) {
+	    //    std::cout << "In Meteorology::Meteorology: getting temperature pointer" << std::endl;
+	    //}
+
+	    //float shear_store_temp[var_len][8];
+            //if ( !(temp_ncVar->get(&shear_store_temp[0][0], var_len, 8)) ) {   
+            //    std::cout << "In Meteorology::Meteorology: extracting temperature" << std::endl;                                                              
+            //}
 
             /* Identify temperature at above pressure */
             S_user = shear_store_temp[i_Zp][0];

@@ -138,7 +138,7 @@ endif
 
 
 # Create linker command to create the APCEMM executable
-LINK := $(LINK) -Wl,--start-group -lUtil -lSands $(LINK_FFTW) -lKpp -lEpm -lAim -lnetcdf_c++ -Wl,--end-group
+LINK := $(LINK) -Wl,--start-group -lUtil -lSands $(LINK_FFTW) -lKpp -lEpm -lAim -lnetcdf_c++4 -Wl,--end-group
 
 ###############################################################################
 ###                                                                         ###

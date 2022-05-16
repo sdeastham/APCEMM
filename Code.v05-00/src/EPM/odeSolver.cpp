@@ -152,7 +152,7 @@ namespace EPM
 
     } /* End of odeSolver::getState */
 
-    streamingObserver::streamingObserver( Vector_2D &states, Vector_1D &times, std::vector<UInt> indices, const char* filename, UInt write_every ):
+    streamingObserver::streamingObserver( Vector_2D &states, Vector_1D &times, std::vector<UInt> indices, std::string filename, UInt write_every ):
         m_write_every( write_every ),
         fileName( filename ),
         m_states( states ),

@@ -28,6 +28,37 @@ const unsigned int FIRSTCOL = 25;
 
 std::string line;
 
+int read_bool_str(std::vector<std::string> tokens, std::string location="UNKNOWN")
+{
+    if ( ( strcmp(tokens[0].c_str(), "T" )    == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "t" )    == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "1" )    == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "TRUE" ) == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "true" ) == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "True" ) == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "YES" )  == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "Yes" )  == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "yes" )  == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "Y" )    == 0 ) || \
+         ( strcmp(tokens[0].c_str(), "y" )    == 0 ) )
+        return 1;
+    else if ( ( strcmp(tokens[0].c_str(), "F" )     == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "f" )     == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "0" )     == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "FALSE" ) == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "false" ) == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "False" ) == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "NO" )    == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "No" )    == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "no" )    == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "N" )     == 0 ) || \
+              ( strcmp(tokens[0].c_str(), "n" )     == 0 ) )
+        return 0;
+    else {
+        std::cout << " Wrong input for: " << location << std::endl;
+        exit(1);
+    }
+}
 
 void Read_Input_File( OptInput &Input_Opt )
 {
@@ -802,36 +833,37 @@ void Read_Parameters( OptInput &Input_Opt, bool &RC )
         std::cout << line << std::endl;
 
     /* Extract variable */
-    tokens = Split_Line( line.substr(FIRSTCOL), SPACE );
+    //tokens = Split_Line( line.substr(FIRSTCOL), SPACE );
 
-    if ( ( strcmp(tokens[0].c_str(), "T" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "t" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "1" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "TRUE" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "true" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "True" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "YES" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "Yes" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "yes" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "Y" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "y" )    == 0 ) )
-        Input_Opt.PARAMETER_FILEINPUT = 1;
-    else if ( ( strcmp(tokens[0].c_str(), "F" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "f" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "0" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "FALSE" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "false" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "False" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "NO" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "No" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "no" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "N" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "n" )     == 0 ) )
-        Input_Opt.PARAMETER_FILEINPUT = 0;
-    else {
-        std::cout << " Wrong input for: " << "Read parameters from file?" << std::endl;
-        exit(1);
-    }
+    Input_Opt.PARAMETER_FILEINPUT = read_bool_str( Split_Line( line.substr(FIRSTCOL), SPACE ), "Read parameters from file?");
+    //if ( ( strcmp(tokens[0].c_str(), "T" )    == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "t" )    == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "1" )    == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "TRUE" ) == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "true" ) == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "True" ) == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "YES" )  == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "Yes" )  == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "yes" )  == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "Y" )    == 0 ) || \
+    //     ( strcmp(tokens[0].c_str(), "y" )    == 0 ) )
+    //    Input_Opt.PARAMETER_FILEINPUT = 1;
+    //else if ( ( strcmp(tokens[0].c_str(), "F" )     == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "f" )     == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "0" )     == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "FALSE" ) == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "false" ) == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "False" ) == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "NO" )    == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "No" )    == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "no" )    == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "N" )     == 0 ) || \
+    //          ( strcmp(tokens[0].c_str(), "n" )     == 0 ) )
+    //    Input_Opt.PARAMETER_FILEINPUT = 0;
+    //else {
+    //    std::cout << " Wrong input for: " << "Read parameters from file?" << std::endl;
+    //    exit(1);
+    //}
 
     /* ==================================================== */
     /* File name                                            */
@@ -7024,36 +7056,7 @@ void Read_PL_Menu( OptInput &Input_Opt, bool &RC )
         std::cout << line << std::endl;
 
     /* Extract variable range */
-    tokens = Split_Line( line.substr(FIRSTCOL), SPACE );
-
-    if ( ( strcmp(tokens[0].c_str(), "T" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "t" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "1" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "TRUE" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "true" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "True" ) == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "YES" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "Yes" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "yes" )  == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "Y" )    == 0 ) || \
-         ( strcmp(tokens[0].c_str(), "y" )    == 0 ) )
-        Input_Opt.PL_O3 = 1;
-    else if ( ( strcmp(tokens[0].c_str(), "F" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "f" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "0" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "FALSE" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "false" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "False" ) == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "NO" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "No" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "no" )    == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "N" )     == 0 ) || \
-              ( strcmp(tokens[0].c_str(), "n" )     == 0 ) )
-        Input_Opt.PL_O3 = 0;
-    else {
-        std::cout << " Wrong input for: " << variable << std::endl;
-        exit(1);
-    }
+    Input_Opt.PL_O3 = read_bool_str( Split_Line(line.substr(FIRSTCOL), SPACE), variable);
 
     if ( ( Input_Opt.CHEMISTRY_CHEMISTRY == 0 ) && \
          ( ( Input_Opt.PL_PL == 1 ) || ( Input_Opt.PL_O3 == 1 ) ) ) {

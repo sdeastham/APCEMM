@@ -27,8 +27,12 @@
 #include "Core/Input_Mod.hpp"
 #include "Util/PhysConstant.hpp"
 #include "Util/MetFunction.hpp"
-#include <netcdfcpp.h>
+/*#include <netcdfcpp.h>*/
+#include <netcdf>
 #include <limits>
+
+using namespace netCDF;
+using namespace netCDF::exceptions;
 
 class Meteorology
 {
