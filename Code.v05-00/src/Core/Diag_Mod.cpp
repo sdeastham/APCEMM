@@ -268,6 +268,20 @@ namespace Diag {
         delete[] array;
     }
 
+    void add3DVar(NcFile& currFile, const Vector_3D& toSave, const vector<NcDim> dims, const string& name, const string& desc, const string& units) {
+        if((toSave.size() != dims[0].getSize()) || (toSave[0].size() != dims[1].getSize()) || (toSave[0][0].size() != dims[2].getSize())) {
+            throw std::runtime_error("Save failed! NcDim dimension size and array sizes don't match! Variable name: " + name );
+        }
+        const double scalingFactor = 1;
+        float* array = util::vect2float (toSave, toSave.size(), toSave[0].size(), toSave[0][0].size(), scalingFactor );
+        NcVar var = currFile.addVar( name, varDataType, dims );
+        var.putAtt("units", units );
+        var.putAtt("long_name", desc );
+        var.putVar( array );
+
+        delete[] array;
+    }
+
     void Diag_TS_Phys( const char* rootName,
                     const int hh, const int mm, const int ss,
                     const AIM::Grid_Aerosol& iceAer, const Vector_2D& H2O,
@@ -393,6 +407,12 @@ namespace Diag {
 
         /* Saving IWC */
         add2DVar(currFile, iceAer.IWC(), xyDims, "IWC", "Ice Water Content", "kg / m^3");
+
+        /* Saving particles by size bin */
+        add3DVar(currFile, iceAer.Number(), xycDims, "num_3D", "Number of ice particles in each size bin", "# / cm^3");
+
+        /* Saving ice volume by size bin */
+        add3DVar(currFile, iceAer.Volume(), xycDims, "vol_3D", "Volume of ice particles in each size bin", "m^3 / cm^3");
 
         /* Saving RHi */
         add2DVar(currFile, physFunc::RHi_Field(H2O, met.Temp(), met.Press()), xyDims, "RHi", "Relative Humidity w.r.t. Ice", "%");
