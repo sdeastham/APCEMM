@@ -64,19 +64,29 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
         std::cout << "\n - Time step: " << timestepVars_.nTime + 1 << " out of " << timestepVars_.timeArray.size();
         std::cout << "\n -> Solar time: " << std::fmod( timestepVars_.curr_Time_s/3600.0, 24.0 ) << " [hr]" << std::endl;
 
+        // Apply a random temperature perturbation if desired
+        if (simVars_.TEMP_PERTURB){
+            met_.updateTempPerturb();
+        }
+
+        // Assume for now that the transport time step is the outer step
+        double dt_full = timestepVars_.TRANSPORT_DT;
+
+        // Run transport and ice growth - subcycle if necessary
+        bool timeForTransport = (simVars_.TRANSPORT && (timestepVars_.nTime == 0 || timestepVars_.checkTimeForTransport()));
+
+        if (timeForTransport) {
+            std::cout << "Running transport and ice growth" << std::endl;
+            cycleTransportGrowth(dt_full);
+            timestepVars_.lastTimeIceGrowth = timestepVars_.curr_Time_s + timestepVars_.dt;
+        }
+
+        /*
         // Run Transport
         std::cout << "Running Transport" << std::endl;
         bool timeForTransport = (simVars_.TRANSPORT && (timestepVars_.nTime == 0 || timestepVars_.checkTimeForTransport()));
         if (timeForTransport) {
             runTransport(timestepVars_.TRANSPORT_DT);
-        }
-
-        /*  With LAGRID remapping every transport timestep, it fundamentally only makes physical sense to update
-            the temperature perturbations at the same interval as the transport timestep. Turbulence timestep is one
-            tool used to tune the intensity of the simulated turbulence, but we can also just vary the amplitude.
-        */
-        if (simVars_.TEMP_PERTURB){
-            met_.updateTempPerturb();
         }
 
         solarTime_h_ = ( timestepVars_.curr_Time_s + timestepVars_.TRANSPORT_DT / 2 ) / 3600.0;
@@ -88,13 +98,14 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
             timestepVars_.lastTimeIceGrowth = timestepVars_.curr_Time_s + timestepVars_.dt;
             iceAerosol_.Grow( timestepVars_.ICE_GROWTH_DT, H2O_, met_.Temp(), met_.Press());
         }
+        */
 
         // Update the tracer of contrail influence to include all locations where we have ice
         // Set it to 1 when there's at least 1 particle per m3 
         auto number = iceAerosol_.TotalNumber();
         for (std::size_t j=0; j<yCoords_.size(); j++){
             for (std::size_t i=0; i<xCoords_.size(); i++){
-                Contrail_[j][i] = std::max(0.0,std::min(1.0,Contrail_[j][i] + number[j][i]*1.0e6));
+                Contrail_[j][i] = std::max(0.0,std::min(1.0,Contrail_[j][i] + number[j][i]*1.0e3));
             }
         }
 
@@ -131,15 +142,16 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
 
         // Run vertical advection to get the new pressure edges
         if (std::abs(met_.lastOmega()) > 1.0e-10){
-            std::cout << "DEBUG: Applying updraft of " << met_.lastOmega() << " Pa s-1" << std::endl;
-            met_.applyUpdraft(timestepVars_.TRANSPORT_DT);
+            met_.applyUpdraft(dt_full);
         }
 
         // Read in the meteorology for the next time step, interpolating in time 
         // This only affects the xInit_ values in the meteorology object, but does
-        // update altitudeInit_ and altitudeEdgesInit_ (pressureInit_ unchanged)
+        // update altitudeInit_ and altitudeEdgesInit_ (pressureInit_ unchanged).
+        // Currently request half way through the step
         std::cout << "Updating Met..." << std::endl;
-        met_.Update( timestepVars_.TRANSPORT_DT, solarTime_h_, simTime_h_);
+        simTime_h_ = ( timestepVars_.curr_Time_s + (dt_full/2.0) - timestepVars_.timeArray[0] ) / 3600.0;
+        met_.Update( dt_full, solarTime_h_, simTime_h_);
         
         // Determine the altitude of each pressure edge after vertical advection and the 
         // application of new temperatures
@@ -147,11 +159,10 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
         
         // Resynchronize the y coordinates
         yEdges_ = met_.yEdges();
-        //yCoords_ = met_.yCoords(); // We didn't update met_.yCoords
 
         //Remap the grid to account for changes in shape due to vertical advection and the growth of the contrail
         std::cout << "Remapping... " << std::endl;
-        remapAllVars(timestepVars_.TRANSPORT_DT, mask, maskInfo);
+        remapAllVars(dt_full, mask, maskInfo);
 
         Vector_2D areas = VectorUtils::cellAreas(xEdges_, yEdges_);
         double numparts = iceAerosol_.TotalNumber_sum(areas);
@@ -163,7 +174,7 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
         }
 
         // Advance time
-        timestepVars_.curr_Time_s += timestepVars_.dt;
+        timestepVars_.curr_Time_s += dt_full;
         timestepVars_.nTime++;
         // Save data to file if it is time to do so
         saveTSAerosol();
@@ -381,6 +392,90 @@ void LAGRIDPlumeModel::updateDiffVecs() {
         }
     }
 }
+
+void LAGRIDPlumeModel::cycleTransportGrowth(double timestep) {
+    //Update the zero bc to reflect grid size changes
+    auto ZERO_BC = FVM_ANDS::bcFrom2DVector(iceAerosol_.getPDF()[0], true);
+
+    //TODO: Implement height dependent shear. For now, just taking shear of y coordinate with highest xOD to avoid bugs.
+    auto xOD = iceAerosol_.xOD(Vector_1D(xCoords_.size(), xCoords_[1] - xCoords_[0]));
+    int maxIdx = 0;
+    for (std::size_t i = 0; i < xOD.size(); i++) {
+        if(xOD[i] > xOD[maxIdx]) maxIdx = i;
+    }
+    shear_rep_ = met_.shear(maxIdx);
+
+    double dy = yEdges_[1] - yEdges_[0];
+    double settling_distance = vFall_[vFall_.size() - 1] * timestep;
+    int n_substeps = std::ceil(settling_distance/dy);
+    double dt_substep = timestep / n_substeps;
+   
+    const FVM_ANDS::AdvDiffParams fvmSolverInitParams(0, 0, shear_rep_, input_.horizDiff(), input_.vertiDiff(), dt_substep);
+    const FVM_ANDS::BoundaryConditions ZERO_BC_INIT = FVM_ANDS::bcFrom2DVector(iceAerosol_.getPDF()[0], true);
+    updateDiffVecs();
+
+    std::cout << "Running with " << n_substeps << " sub steps to cover " << timestep << " seconds" << std::endl;
+    for (int i_substep=0; i_substep<n_substeps; i_substep++) { 
+        //Transport the Ice Aerosol PDF
+        #pragma omp parallel for default(shared)
+        for ( UInt n = 0; n < iceAerosol_.getNBin(); n++ ) {
+            /* Transport particle number and volume for each bin and
+                * recompute centers of each bin for each grid cell
+                * accordingly */
+            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
+            //Update solver params
+            solver.updateTimestep(dt_substep);
+            solver.updateDiffusion(diffCoeffX_, diffCoeffY_);
+            solver.updateAdvection(0, -vFall_[n], shear_rep_);
+
+            //passing in "false" to the "parallelAdvection" param to not spawn more threads
+            solver.operatorSplitSolve2DVec(iceAerosol_.getPDF_nonConstRef()[n], ZERO_BC, false);
+        }
+
+        //Transport H2O
+        {   
+            //Dont use enhanced diffusion on the H2O (and zero settling velocity)
+            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
+            solver.updateTimestep(dt_substep);
+            solver.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
+            solver.updateAdvection(0, 0, shear_rep_);
+
+            // Calculate diffusion relative to a vertically-varying background H2O field
+            // This prevents APCEMM from smoothing out pre-existing meteorological gradients
+            // which will remain in the background/boundary conditions.
+            Vector_2D H2O_Delta;
+            H2O_Delta = Vector_2D(yCoords_.size(), Vector_1D(xCoords_.size()));
+            auto H2O_Background = met_.H2O_field();
+            for (std::size_t j=0; j<yCoords_.size(); j++){
+                for (std::size_t i=0; i<xCoords_.size(); i++){
+                    H2O_Delta[j][i] = H2O_[j][i] - H2O_Background[j][i];
+                }
+            }
+            // BC is zero, since we're calculating the difference relative to background.
+            solver.operatorSplitSolve2DVec(H2O_Delta, ZERO_BC);
+            for (std::size_t j=0; j<yCoords_.size(); j++){
+                for (std::size_t i=0; i<xCoords_.size(); i++){
+                    H2O_[j][i] = H2O_Delta[j][i] + H2O_Background[j][i];
+                }
+            }
+        }
+
+        //Transport the contrail tracer
+        {   
+            //Identical settings to H2O
+            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(Contrail_));
+            solver.updateTimestep(dt_substep);
+            solver.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
+            solver.updateAdvection(0, 0, shear_rep_);
+
+            solver.operatorSplitSolve2DVec(Contrail_, ZERO_BC);
+        }
+
+        // Run Ice Growth
+        iceAerosol_.Grow( dt_substep, H2O_, met_.Temp(), met_.Press());
+    }
+}
+
 void LAGRIDPlumeModel::runTransport(double timestep) {
     //Update the zero bc to reflect grid size changes
     auto ZERO_BC = FVM_ANDS::bcFrom2DVector(iceAerosol_.getPDF()[0], true);
