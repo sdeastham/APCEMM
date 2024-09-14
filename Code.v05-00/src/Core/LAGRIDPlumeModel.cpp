@@ -415,61 +415,49 @@ void LAGRIDPlumeModel::cycleTransportGrowth(double timestep) {
     updateDiffVecs();
 
     std::cout << "Running with " << n_substeps << " sub steps to cover " << timestep << " seconds" << std::endl;
+
+
+    FVM_ANDS::FVM_Solver solver_aerosol(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
+    solver_aerosol.updateTimestep(dt_substep);
+    solver_aerosol.updateDiffusion(diffCoeffX_, diffCoeffY_);
+
+    FVM_ANDS::FVM_Solver solver_h2o(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
+    solver_h2o.updateTimestep(dt_substep);
+    solver_h2o.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
+    solver_h2o.updateAdvection(0, 0, shear_rep_);
+
+    FVM_ANDS::FVM_Solver solver_contrail(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(Contrail_));
+    solver_contrail.updateTimestep(dt_substep);
+    solver_contrail.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
+    solver_contrail.updateAdvection(0, 0, shear_rep_);
+
+    Vector_2D H2O_Delta;
+    H2O_Delta = Vector_2D(yCoords_.size(), Vector_1D(xCoords_.size()));
     for (int i_substep=0; i_substep<n_substeps; i_substep++) { 
         //Transport the Ice Aerosol PDF
-        #pragma omp parallel for default(shared)
         for ( UInt n = 0; n < iceAerosol_.getNBin(); n++ ) {
-            /* Transport particle number and volume for each bin and
-                * recompute centers of each bin for each grid cell
-                * accordingly */
-            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
-            //Update solver params
-            solver.updateTimestep(dt_substep);
-            solver.updateDiffusion(diffCoeffX_, diffCoeffY_);
-            solver.updateAdvection(0, -vFall_[n], shear_rep_);
-
-            //passing in "false" to the "parallelAdvection" param to not spawn more threads
-            solver.operatorSplitSolve2DVec(iceAerosol_.getPDF_nonConstRef()[n], ZERO_BC, false);
+            solver_aerosol.updateAdvection(0, -vFall_[n], shear_rep_);
+            solver_aerosol.operatorSplitSolve2DVec(iceAerosol_.getPDF_nonConstRef()[n], ZERO_BC);
         }
 
-        //Transport H2O
-        {   
-            //Dont use enhanced diffusion on the H2O (and zero settling velocity)
-            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(H2O_));
-            solver.updateTimestep(dt_substep);
-            solver.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
-            solver.updateAdvection(0, 0, shear_rep_);
-
-            // Calculate diffusion relative to a vertically-varying background H2O field
-            // This prevents APCEMM from smoothing out pre-existing meteorological gradients
-            // which will remain in the background/boundary conditions.
-            Vector_2D H2O_Delta;
-            H2O_Delta = Vector_2D(yCoords_.size(), Vector_1D(xCoords_.size()));
-            auto H2O_Background = met_.H2O_field();
-            for (std::size_t j=0; j<yCoords_.size(); j++){
-                for (std::size_t i=0; i<xCoords_.size(); i++){
-                    H2O_Delta[j][i] = H2O_[j][i] - H2O_Background[j][i];
-                }
-            }
-            // BC is zero, since we're calculating the difference relative to background.
-            solver.operatorSplitSolve2DVec(H2O_Delta, ZERO_BC);
-            for (std::size_t j=0; j<yCoords_.size(); j++){
-                for (std::size_t i=0; i<xCoords_.size(); i++){
-                    H2O_[j][i] = H2O_Delta[j][i] + H2O_Background[j][i];
-                }
+        //Dont use enhanced diffusion on the H2O (and zero settling velocity)
+        // Calculate diffusion relative to a vertically-varying background H2O field
+        // This prevents APCEMM from smoothing out pre-existing meteorological gradients
+        // which will remain in the background/boundary conditions.
+        auto H2O_Background = met_.H2O_field();
+        for (std::size_t j=0; j<yCoords_.size(); j++){
+            for (std::size_t i=0; i<xCoords_.size(); i++){
+                H2O_Delta[j][i] = H2O_[j][i] - H2O_Background[j][i];
             }
         }
-
-        //Transport the contrail tracer
-        {   
-            //Identical settings to H2O
-            FVM_ANDS::FVM_Solver solver(fvmSolverInitParams, xCoords_, yCoords_, ZERO_BC_INIT, FVM_ANDS::std2dVec_to_eigenVec(Contrail_));
-            solver.updateTimestep(dt_substep);
-            solver.updateDiffusion(input_.horizDiff(), input_.vertiDiff());
-            solver.updateAdvection(0, 0, shear_rep_);
-
-            solver.operatorSplitSolve2DVec(Contrail_, ZERO_BC);
+        // BC is zero, since we're calculating the difference relative to background.
+        solver_h2o.operatorSplitSolve2DVec(H2O_Delta, ZERO_BC);
+        for (std::size_t j=0; j<yCoords_.size(); j++){
+            for (std::size_t i=0; i<xCoords_.size(); i++){
+                H2O_[j][i] = H2O_Delta[j][i] + H2O_Background[j][i];
+            }
         }
+        solver_contrail.operatorSplitSolve2DVec(Contrail_, ZERO_BC);
 
         // Run Ice Growth
         iceAerosol_.Grow( dt_substep, H2O_, met_.Temp(), met_.Press());
