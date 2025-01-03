@@ -27,7 +27,8 @@ elseif (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
     endif()
     
     # Turn on warnings always
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fopenmp")
+    #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fopenmp")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fopenmp -pg -g -fno-omit-frame-pointer")
 
 
     #Enabling unsafe optimizations doesn't seem to affect the runtime much, but could be something to check just in case later.
