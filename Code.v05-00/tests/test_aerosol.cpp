@@ -1,4 +1,5 @@
 #include "AIM/Aerosol.hpp"
+#include "AIM/Settling.hpp"
 #include "Util/ForwardDecl.hpp"
 #include "Util/PhysConstant.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -322,6 +323,37 @@ TEST_CASE("Aerosol Flexible Bin Grid Construction", "[aerosol][bins]") {
             double m3 = aer.Moment(3);
             REQUIRE(m3 == Catch::Approx(analytic_m3).epsilon(0.05));
         }
+    }
+}
+
+TEST_CASE ("Settling Velocities", "[settling]" ) {
+    const UInt nBins = 38;
+    const double r_low = 1.0e-8;
+    const double r_hig = 1.0e-4;
+    const double rrat = pow(r_hig / r_low, 1.0 / nBins);
+    Vector_1D edges(nBins + 1);
+    Vector_1D centers(nBins);
+    edges[0] = r_low;
+    for (UInt i = 1; i <= nBins; ++i) {
+        edges[i] = edges[i - 1] * rrat;
+    }
+    for (UInt i = 0; i < nBins; ++i) {
+        centers[i] = std::sqrt(edges[i] * edges[i + 1]);
+    }
+
+    const double T = 215.0;
+    const double P = 23000.0;
+    Vector_1D v_N = SettlingVelocity(centers, T, P);
+    Vector_1D v_V = SettlingVelocityVolume(edges, T, P);
+
+    REQUIRE(v_N.size() == nBins);
+    REQUIRE(v_V.size() == nBins);
+
+    for (UInt i = 0; i < nBins; ++i) {
+        REQUIRE(v_N[i] > 0.0);
+        REQUIRE(v_V[i] > 0.0);
+        // Mass/volume settling velocity must strictly exceed number settling velocity
+        REQUIRE(v_V[i] > v_N[i]);
     }
 }
 

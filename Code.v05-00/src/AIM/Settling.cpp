@@ -117,6 +117,37 @@ namespace AIM
 
     }
 
+    Vector_1D SettlingVelocityVolume( const Vector_1D binEdges, const double T, const double P )
+    {
+        /* DESCRIPTION: Computes the mass/volume-weighted settling velocity for each bin.
+         * For a sectional distribution with dN/d(ln r) = const within bin [r1, r2],
+         * the volume-weighted mean square radius under Stokes settling (v ~ r^2) is:
+         *   <r^2>_V = (3/5) * (r2^5 - r1^5) / (r2^3 - r1^3)
+         *   r_V = sqrt(<r^2>_V)
+         */
+        if ( binEdges.size() < 2 ) {
+            return Vector_1D();
+        }
+
+        const UInt nBins = binEdges.size() - 1;
+        Vector_1D r_V( nBins, 0.0E+00 );
+        for ( UInt iBin = 0; iBin < nBins; ++iBin ) {
+            const double r1 = binEdges[iBin];
+            const double r2 = binEdges[iBin + 1];
+            if ( (r2 - r1) / r1 < 1.0E-06 ) {
+                r_V[iBin] = std::sqrt(r1 * r2);
+            } else {
+                const double r1_3 = r1 * r1 * r1;
+                const double r2_3 = r2 * r2 * r2;
+                const double r1_5 = r1_3 * r1 * r1;
+                const double r2_5 = r2_3 * r2 * r2;
+                r_V[iBin] = std::sqrt( 0.6 * ( r2_5 - r1_5 ) / ( r2_3 - r1_3 ) );
+            }
+        }
+
+        return SettlingVelocity( r_V, T, P );
+    }
+
 }
 
 

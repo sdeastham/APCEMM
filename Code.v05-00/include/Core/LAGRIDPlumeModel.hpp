@@ -55,6 +55,9 @@ class LAGRIDPlumeModel {
         Vector_2D H2O_;
         Vector_2D Contrail_;
         Vector_1D vFall_;
+        Vector_1D vFall_N_;
+        Vector_1D vFall_V_;
+        Vector_1D deltaV_Fall_;
         double initNumParts_;
         double simTime_h_;
         double solarTime_h_;
@@ -107,6 +110,7 @@ class LAGRIDPlumeModel {
         Vector_2D applyWeights(const Eigen::SparseMatrix<double>& weights, int nx_old, int ny_old, int nx_new, int ny_new, const Vector_2D& dataIn); 
 
         void printVector2D(const std::string fieldName, const Vector_2D& dataIn);
+        static void applyIntraBinDispersion(Vector_2D& field, double mu);
 
 };
 

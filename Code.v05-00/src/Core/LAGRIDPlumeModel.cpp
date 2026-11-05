@@ -85,10 +85,22 @@ SimStatus LAGRIDPlumeModel::runFullModel() {
 
     //Setup settling velocities
     if ( simVars_.GRAVSETTLING ) {
-        vFall_ = AIM::SettlingVelocity( iceAerosol_.getBinCenters(), \
-                                       met_.tempRef(), simVars_.pressure_Pa );
+        vFall_N_ = AIM::SettlingVelocity( iceAerosol_.getBinCenters(), \
+                                         met_.tempRef(), simVars_.pressure_Pa );
+        vFall_V_ = AIM::SettlingVelocityVolume( iceAerosol_.getBinEdges(), \
+                                         met_.tempRef(), simVars_.pressure_Pa );
+        vFall_ = vFall_V_;
+        const Vector_1D vEdge = AIM::SettlingVelocity( iceAerosol_.getBinEdges(), \
+                                         met_.tempRef(), simVars_.pressure_Pa );
+        deltaV_Fall_.resize( iceAerosol_.getNBin(), 0.0 );
+        for ( UInt n = 0; n < iceAerosol_.getNBin(); ++n ) {
+            deltaV_Fall_[n] = std::max(0.0, vEdge[n + 1] - vEdge[n]);
+        }
     } else {
+        vFall_N_.assign( iceAerosol_.getNBin(), 0.0 );
+        vFall_V_.assign( iceAerosol_.getNBin(), 0.0 );
         vFall_.assign( iceAerosol_.getNBin(), 0.0 );
+        deltaV_Fall_.assign( iceAerosol_.getNBin(), 0.0 );
     }
 
     bool EARLY_STOP = false;
@@ -568,6 +580,8 @@ void LAGRIDPlumeModel::runTransport(double timestep, double time_start) {
     
     Vector_3D& pdfRef = iceAerosol_.getPDF();
     Vector_3D volume = iceAerosol_.Volume();
+    const double dy = yCoords_.size() > 1 ? std::abs(yCoords_[1] - yCoords_[0]) : 1.0;
+    const double alpha = 0.25;
 
     #pragma omp parallel for default(shared) schedule(dynamic)
     for ( UInt n = 0; n < iceAerosol_.getNBin(); n++ ) {
@@ -579,12 +593,20 @@ void LAGRIDPlumeModel::runTransport(double timestep, double time_start) {
         int tid = omp_get_thread_num();
         auto& solver = *solver_pool[tid];
         
-        //Update solver params for this bin
-        solver.updateAdvection(0, -vFall_[n], shear_rep_);
-
-        //passing in "false" to the "parallelAdvection" param to not spawn more threads
+        // Advect Number with number fall velocity
+        solver.updateAdvection(0, -vFall_N_[n], shear_rep_);
         solver.operatorSplitSolve2DVec(pdfRef[n], ZERO_BC, false);
+
+        // Advect Volume with mass/volume fall velocity
+        solver.updateAdvection(0, -vFall_V_[n], shear_rep_);
         solver.operatorSplitSolve2DVec(volume[n], ZERO_BC, false);
+
+        // Apply intra-bin velocity dispersion along vertical columns
+        if ( simVars_.GRAVSETTLING && deltaV_Fall_[n] > 0.0 ) {
+            const double mu = std::min(0.25, alpha * (deltaV_Fall_[n] * timestep) / dy);
+            applyIntraBinDispersion(pdfRef[n], mu);
+            applyIntraBinDispersion(volume[n], mu);
+        }
     }
 
     // Recalculate intra-bin centers across the domain after transport
@@ -995,4 +1017,24 @@ void LAGRIDPlumeModel::saveTSAerosol() {
         std::cout << "Save Complete" << std::endl;    
     }
 
+}
+
+void LAGRIDPlumeModel::applyIntraBinDispersion(Vector_2D& field, double mu) {
+    if (mu <= 1.0e-12) return;
+    const std::size_t ny = field.size();
+    if (ny < 2) return;
+    const std::size_t nx = field[0].size();
+    if (nx == 0) return;
+
+    std::vector<double> col(ny);
+    for (std::size_t i = 0; i < nx; ++i) {
+        for (std::size_t j = 0; j < ny; ++j) {
+            col[j] = field[j][i];
+        }
+        field[0][i] = (1.0 - mu) * col[0] + mu * col[1];
+        for (std::size_t j = 1; j < ny - 1; ++j) {
+            field[j][i] = (1.0 - 2.0 * mu) * col[j] + mu * (col[j - 1] + col[j + 1]);
+        }
+        field[ny - 1][i] = (1.0 - mu) * col[ny - 1] + mu * col[ny - 2];
+    }
 }
