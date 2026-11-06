@@ -30,6 +30,7 @@ namespace AIM
         bin_Centers(bin_Centers_),
         bin_VCenters(bin_Centers_.size()),
         bin_Edges(bin_Edges_),
+        bin_VNominal(bin_Centers_.size()),
         bin_Sizes(bin_Centers_.size()),
         log_Bin_Edges(bin_Edges_.size()),
         nBin(bin_Centers_.size()),
@@ -52,6 +53,7 @@ namespace AIM
         double bin_edge_cubed = bin_Edges[iBin] * bin_Edges[iBin] * bin_Edges[iBin];
         double next_bin_edge_cubed = bin_Edges[iBin + 1] * bin_Edges[iBin + 1] * bin_Edges[iBin + 1];
         bin_VCenters[iBin] = 4.0 / 3.0 * PI * (bin_edge_cubed + next_bin_edge_cubed) * 0.5;
+        bin_VNominal[iBin] = bin_VCenters[iBin];
         log_Bin_Edges[iBin] = log(bin_Edges[iBin]);
     }
     log_Bin_Edges[nBin] = log(bin_Edges[nBin]);
@@ -450,6 +452,7 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
         bin_Centers(bin_Centers_),
         bin_Edges(bin_Edges_),
         bin_VEdges(bin_Centers_.size() + 1),
+        bin_VNominal(bin_Centers_.size()),
         bin_Sizes(bin_Centers_.size()),
         log_Bin_Edges(bin_Edges_.size()),
         nBin(bin_Centers.size()),
@@ -475,6 +478,11 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
         log_Bin_Edges[nBin] = log(bin_Edges[nBin]);
         bin_VEdges[nBin] = 4.0 / 3.0 * PI * bin_Edges[nBin] * bin_Edges[nBin] * bin_Edges[nBin];
 
+        for (UInt iBin = 0; iBin < nBin; iBin++)
+        {
+            bin_VNominal[iBin] = 0.5 * (bin_VEdges[iBin] + bin_VEdges[iBin + 1]);
+        }
+
         bin_VCenters.resize(nBin, Vector_2D(Ny, Vector_1D(Nx, 0.0E+00)));
 
         for (UInt iBin = 0; iBin < nBin; iBin++)
@@ -482,7 +490,7 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
             for (UInt jNy = 0; jNy < Ny; jNy++)
             {
                 for (UInt iNx = 0; iNx < Nx; iNx++)
-                    bin_VCenters[iBin][jNy][iNx] = 0.5 * (bin_VEdges[iBin] + bin_VEdges[iBin + 1]);
+                    bin_VCenters[iBin][jNy][iNx] = bin_VNominal[iBin];
             }
         }
 
@@ -771,9 +779,6 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
         #pragma omp parallel default( shared )
         {
 
-            std::vector<int> toBin( nBin, 0 );
-            std::vector<int>::iterator iterBegin, iterCurr, iterEnd;
-
             /* Declare and initialize variable to store saturation quantities,
             * pressure and temperature */
             double locT = 0.0E+00;
@@ -813,16 +818,8 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
                     if ( H2O[jNy][iNx] * kB_ * locT / pSat > 0.0 ) {
                         APC_Scheme(jNy,iNx, locT, locP, dt, H2O, totH2O, icePart, iceVol );
                     }
-                    /* ============== Moving-center structure ================ */
-                    /* ======================================================= */
-                    /* ============= Update bin center average =============== */
-
-
-                    /* 1. Compute bin particle flux */
-                    toBin = ComputeBinParticleFlux(iNx, jNy, iceVol, icePart);
-
-                    /* 2. Attribute new particles according to fluxes */
-                    ApplyBinParticleFlux(iNx, jNy, toBin, iceVol, icePart);
+                    /* Two-moment boundary-overshoot repartitioning (TOMAS; Adams & Seinfeld 2002) */
+                    RepartitionBoundaryOvershoot(iNx, jNy, iceVol, icePart, H2O);
                 }
             }
         } /* pragma omp parallel */
@@ -1008,6 +1005,168 @@ void Aerosol::addAerosolToPDF( const Aerosol &rhs ) {
             }
         }
     } //End of Grid_Aerosol::ApplyBinParticleFlux
+
+    void Grid_Aerosol::RepartitionBoundaryOvershoot(const int x_index, const int y_index,
+                                                    const Vector_3D &iceVol, const Vector_3D &icePart,
+                                                    Vector_2D &H2O)
+    {
+        const double UNITCONVERSION = RHO_ICE / MW_H2O * Na;
+        std::vector<double> newPart(nBin, 0.0);
+        std::vector<double> newVol(nBin, 0.0);
+
+        for (UInt iBin = 0; iBin < nBin; ++iBin)
+        {
+            const double N = icePart[iBin][y_index][x_index];
+            const double V = iceVol[iBin][y_index][x_index];
+            if (N <= 0.0 || V <= 0.0)
+            {
+                continue;
+            }
+            const double v_new = V / N;
+
+            // Case 1: Internal growth / shrink within bin boundaries (f = 0.0, zero spectral diffusion)
+            if (v_new >= bin_VEdges[iBin] && v_new <= bin_VEdges[iBin + 1])
+            {
+                newPart[iBin] += N;
+                newVol[iBin] += V;
+            }
+            // Case 2: Upper boundary overshoot (condensation growth)
+            else if (v_new > bin_VEdges[iBin + 1])
+            {
+                if (iBin >= nBin - 1)
+                {
+                    // Already in top bin: clamp to upper boundary
+                    newPart[nBin - 1] += N;
+                    newVol[nBin - 1] += std::min(V, N * bin_VEdges[nBin]);
+                }
+                else if (v_new <= bin_VNominal[iBin + 1])
+                {
+                    // Standard single-bin overshoot to next nominal center
+                    const double denom = bin_VNominal[iBin + 1] - bin_VEdges[iBin + 1];
+                    const double f = (denom > 0.0) ? (v_new - bin_VEdges[iBin + 1]) / denom : 1.0;
+                    const double f_clamped = std::max(0.0, std::min(1.0, f));
+                    const double N_trans = f_clamped * N;
+                    const double N_remain = N - N_trans;
+
+                    newPart[iBin] += N_remain;
+                    newVol[iBin] += N_remain * bin_VEdges[iBin + 1];
+
+                    newPart[iBin + 1] += N_trans;
+                    newVol[iBin + 1] += N_trans * bin_VNominal[iBin + 1];
+                }
+                else
+                {
+                    // Multi-bin overshoot: locate interval between nominal centers
+                    UInt m = iBin + 1;
+                    while (m < nBin - 1 && v_new > bin_VNominal[m + 1])
+                    {
+                        m++;
+                    }
+                    if (m >= nBin - 1)
+                    {
+                        // Beyond highest nominal center
+                        newPart[nBin - 1] += N;
+                        newVol[nBin - 1] += std::min(V, N * bin_VEdges[nBin]);
+                    }
+                    else
+                    {
+                        const double denom = bin_VNominal[m + 1] - bin_VNominal[m];
+                        const double f = (denom > 0.0) ? (v_new - bin_VNominal[m]) / denom : 1.0;
+                        const double f_clamped = std::max(0.0, std::min(1.0, f));
+                        const double N_trans = f_clamped * N;
+                        const double N_remain = N - N_trans;
+
+                        newPart[m] += N_remain;
+                        newVol[m] += N_remain * bin_VNominal[m];
+
+                        newPart[m + 1] += N_trans;
+                        newVol[m + 1] += N_trans * bin_VNominal[m + 1];
+                    }
+                }
+            }
+            // Case 3: Lower boundary undershoot (sublimation / evaporation)
+            else // v_new < bin_VEdges[iBin]
+            {
+                if (iBin == 0 || v_new < bin_VEdges[0])
+                {
+                    // Below smallest bin edge: complete sublimation back to water vapor
+                    H2O[y_index][x_index] += V * UNITCONVERSION;
+                }
+                else if (v_new >= bin_VNominal[iBin - 1])
+                {
+                    // Standard single-bin undershoot to lower nominal center
+                    const double denom = bin_VEdges[iBin] - bin_VNominal[iBin - 1];
+                    const double f = (denom > 0.0) ? (bin_VEdges[iBin] - v_new) / denom : 1.0;
+                    const double f_clamped = std::max(0.0, std::min(1.0, f));
+                    const double N_trans = f_clamped * N;
+                    const double N_remain = N - N_trans;
+
+                    newPart[iBin] += N_remain;
+                    newVol[iBin] += N_remain * bin_VEdges[iBin];
+
+                    newPart[iBin - 1] += N_trans;
+                    newVol[iBin - 1] += N_trans * bin_VNominal[iBin - 1];
+                }
+                else
+                {
+                    // Multi-bin sublimation: locate interval between nominal centers
+                    int m = static_cast<int>(iBin) - 1;
+                    while (m > 0 && v_new < bin_VNominal[m])
+                    {
+                        m--;
+                    }
+                    if (m <= 0 && v_new < bin_VNominal[0])
+                    {
+                        if (v_new >= bin_VEdges[0])
+                        {
+                            const double denom = bin_VNominal[0] - bin_VEdges[0];
+                            const double f0 = (denom > 0.0) ? (v_new - bin_VEdges[0]) / denom : 0.0;
+                            const double f0_clamped = std::max(0.0, std::min(1.0, f0));
+                            const double N_keep = f0_clamped * N;
+                            const double N_sub = N - N_keep;
+                            newPart[0] += N_keep;
+                            newVol[0] += N_keep * bin_VNominal[0];
+                            H2O[y_index][x_index] += (N_sub * bin_VEdges[0]) * UNITCONVERSION;
+                        }
+                        else
+                        {
+                            H2O[y_index][x_index] += V * UNITCONVERSION;
+                        }
+                    }
+                    else
+                    {
+                        const double denom = bin_VNominal[m + 1] - bin_VNominal[m];
+                        const double f = (denom > 0.0) ? (v_new - bin_VNominal[m]) / denom : 0.0;
+                        const double f_clamped = std::max(0.0, std::min(1.0, f));
+                        const double N_high = f_clamped * N;
+                        const double N_low = N - N_high;
+
+                        newPart[m] += N_low;
+                        newVol[m] += N_low * bin_VNominal[m];
+
+                        newPart[m + 1] += N_high;
+                        newVol[m + 1] += N_high * bin_VNominal[m + 1];
+                    }
+                }
+            }
+        }
+
+        // Update bin centers and pdf
+        for (UInt iBin = 0; iBin < nBin; ++iBin)
+        {
+            if (newPart[iBin] > 0.0 && newVol[iBin] > 0.0)
+            {
+                const double avgV = newVol[iBin] / newPart[iBin];
+                bin_VCenters[iBin][y_index][x_index] = std::max(bin_VEdges[iBin], std::min(bin_VEdges[iBin + 1], avgV));
+                pdf[iBin][y_index][x_index] = newPart[iBin] / (log_Bin_Edges[iBin + 1] - log_Bin_Edges[iBin]);
+            }
+            else
+            {
+                bin_VCenters[iBin][y_index][x_index] = bin_VNominal[iBin];
+                pdf[iBin][y_index][x_index] = 0.0;
+            }
+        }
+    } // End of Grid_Aerosol::RepartitionBoundaryOvershoot
 
     bool Grid_Aerosol::CheckCoagAndGrowInputs(const UInt N, const UInt SYM, UInt& Nx_max, UInt& Ny_max, const std::string funcName) const 
     {

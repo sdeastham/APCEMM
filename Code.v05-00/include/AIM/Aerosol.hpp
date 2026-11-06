@@ -85,6 +85,7 @@ class AIM::Aerosol
         inline const Vector_1D& getBinCenters() const { return bin_Centers; };
         inline const Vector_1D& getBinVCenters() const { return bin_VCenters; };
         inline const Vector_1D& getBinEdges() const { return bin_Edges; };
+        inline const Vector_1D& getBinVNominal() const { return bin_VNominal; };
         inline const Vector_1D& getBinSizes() const { return bin_Sizes; };
         inline const Vector_1D& getLogBinEdges() const { return log_Bin_Edges; };
         inline UInt getNBin() const { return nBin; };
@@ -95,6 +96,7 @@ class AIM::Aerosol
         Vector_1D bin_Centers;
         Vector_1D bin_VCenters;
         Vector_1D bin_Edges;
+        Vector_1D bin_VNominal;
         Vector_1D bin_Sizes;
         Vector_1D log_Bin_Edges;
         UInt nBin;
@@ -123,6 +125,7 @@ class AIM::Grid_Aerosol
                         const double dt, Vector_2D& H2O, Vector_2D& totH2O, Vector_3D& icePart, Vector_3D& iceVol);
         std::vector<int> ComputeBinParticleFlux(const int x_index, const int y_index, const Vector_3D& iceVol, const Vector_3D& icePart) const;
         void ApplyBinParticleFlux(const int x_index, const int y_index, const std::vector<int> &toBin, const Vector_3D &iceVol, const Vector_3D &icePart);
+        void RepartitionBoundaryOvershoot(const int x_index, const int y_index, const Vector_3D &iceVol, const Vector_3D &icePart, Vector_2D &H2O);
 
         /* Helper Functions for Coagulation and Ice Growth */
         bool CheckCoagAndGrowInputs(const UInt N, const UInt SYM, UInt& Nx_max, UInt& Ny_max, const std::string funcName) const;
@@ -191,6 +194,8 @@ class AIM::Grid_Aerosol
         inline const Vector_1D& getBinCenters() const { return bin_Centers; };
         inline const Vector_3D& getBinVCenters() const { return bin_VCenters; };
         inline const Vector_1D& getBinEdges() const { return bin_Edges; };
+        inline const Vector_1D& getBinVEdges() const { return bin_VEdges; };
+        inline const Vector_1D& getBinVNominal() const { return bin_VNominal; };
         inline const Vector_1D& getBinSizes() const { return bin_Sizes; };
         inline const Vector_1D& getLogBinEdges() const { return log_Bin_Edges; };
         inline UInt getNBin() const { return nBin; };
@@ -204,6 +209,7 @@ class AIM::Grid_Aerosol
         Vector_3D bin_VCenters;
         Vector_1D bin_Edges;
         Vector_1D bin_VEdges;
+        Vector_1D bin_VNominal;
         Vector_1D bin_Sizes;
         Vector_1D log_Bin_Edges;
         UInt nBin;

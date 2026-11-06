@@ -357,3 +357,178 @@ TEST_CASE ("Settling Velocities", "[settling]" ) {
     }
 }
 
+TEST_CASE("RepartitionBoundaryOvershoot", "[microphysics]") {
+    const UInt nBins = 38;
+    const double r_low = 1.0e-7; // 0.1 um
+    const double r_hig = 1.0e-4; // 100 um
+    const double vrat = 2.0;
+    const double rrat = cbrt(vrat);
+
+    Vector_1D edges(nBins + 1);
+    Vector_1D centers(nBins);
+    edges[0] = r_low;
+    for (UInt i = 1; i <= nBins; ++i) {
+        edges[i] = edges[i - 1] * rrat;
+    }
+    for (UInt i = 0; i < nBins; ++i) {
+        centers[i] = std::sqrt(edges[i] * edges[i + 1]);
+    }
+
+    const double UNITCONV = physConst::RHO_ICE / MW_H2O * physConst::Na;
+
+    SECTION("Internal growth: zero spectral diffusion and exact conservation") {
+        Grid_Aerosol aer(1, 1, centers, edges, 0.0, 1.0, 1.6);
+        const auto& v_edges = aer.getBinVEdges();
+        const auto& v_nom = aer.getBinVNominal();
+
+        // Place particles in bin 10 at nominal center
+        const UInt test_bin = 10;
+        const double N0 = 5.0e5; // part / cm3
+        const double v_grown = 0.5 * (v_edges[test_bin] + v_edges[test_bin + 1]); // strictly internal
+        const double V0 = N0 * v_grown;
+
+        Vector_3D icePart(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_3D iceVol(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_2D H2O(1, Vector_1D(1, 1.0e14));
+
+        icePart[test_bin][0][0] = N0;
+        iceVol[test_bin][0][0] = V0;
+
+        aer.RepartitionBoundaryOvershoot(0, 0, iceVol, icePart, H2O);
+
+        const auto& pdf = aer.getPDF();
+        const auto& v_centers = aer.getBinVCenters();
+        const auto& log_edges = aer.getLogBinEdges();
+
+        // Bin test_bin should contain all particles
+        double N_retrieved = pdf[test_bin][0][0] * (log_edges[test_bin + 1] - log_edges[test_bin]);
+        REQUIRE(N_retrieved == Catch::Approx(N0).epsilon(1.0e-12));
+        REQUIRE(v_centers[test_bin][0][0] == Catch::Approx(v_grown).epsilon(1.0e-12));
+
+        // Neighboring bins must have exactly 0 particles (zero spectral diffusion)
+        for (UInt b = 0; b < nBins; ++b) {
+            if (b != test_bin) {
+                REQUIRE(pdf[b][0][0] == 0.0);
+            }
+        }
+    }
+
+    SECTION("Boundary overshoot: exact conservation across partition") {
+        Grid_Aerosol aer(1, 1, centers, edges, 0.0, 1.0, 1.6);
+        const auto& v_edges = aer.getBinVEdges();
+        const auto& v_nom = aer.getBinVNominal();
+
+        const UInt test_bin = 15;
+        const double N0 = 1.0e6;
+        // Grow to 30% past upper boundary towards next nominal center
+        const double v_grown = v_edges[test_bin + 1] + 0.3 * (v_nom[test_bin + 1] - v_edges[test_bin + 1]);
+        const double V0 = N0 * v_grown;
+
+        Vector_3D icePart(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_3D iceVol(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_2D H2O(1, Vector_1D(1, 1.0e14));
+
+        icePart[test_bin][0][0] = N0;
+        iceVol[test_bin][0][0] = V0;
+
+        aer.RepartitionBoundaryOvershoot(0, 0, iceVol, icePart, H2O);
+
+        const auto& pdf = aer.getPDF();
+        const auto& v_centers = aer.getBinVCenters();
+        const auto& log_edges = aer.getLogBinEdges();
+
+        double N_stay = pdf[test_bin][0][0] * (log_edges[test_bin + 1] - log_edges[test_bin]);
+        double N_trans = pdf[test_bin + 1][0][0] * (log_edges[test_bin + 2] - log_edges[test_bin + 1]);
+        double V_stay = N_stay * v_centers[test_bin][0][0];
+        double V_trans = N_trans * v_centers[test_bin + 1][0][0];
+
+        // Number conservation
+        REQUIRE(N_stay + N_trans == Catch::Approx(N0).epsilon(1.0e-12));
+        // Volume conservation
+        REQUIRE(V_stay + V_trans == Catch::Approx(V0).epsilon(1.0e-12));
+
+        // Theoretical fractions
+        const double f_trans = 0.3;
+        REQUIRE(N_trans == Catch::Approx(f_trans * N0).epsilon(1.0e-6));
+        REQUIRE(N_stay == Catch::Approx((1.0 - f_trans) * N0).epsilon(1.0e-6));
+
+        // All other bins must be empty
+        for (UInt b = 0; b < nBins; ++b) {
+            if (b != test_bin && b != test_bin + 1) {
+                REQUIRE(pdf[b][0][0] == 0.0);
+            }
+        }
+    }
+
+    SECTION("120-step multi-step growth: zero diffusion into upper bins") {
+        Grid_Aerosol aer(1, 1, centers, edges, 0.0, 1.0, 1.6);
+        const auto& v_edges = aer.getBinVEdges();
+        const auto& v_nom = aer.getBinVNominal();
+        const auto& log_edges = aer.getLogBinEdges();
+
+        const UInt start_bin = 15;
+        const double N0 = 1.0e6;
+
+        Vector_3D icePart(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_3D iceVol(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_2D H2O(1, Vector_1D(1, 1.0e14));
+
+        icePart[start_bin][0][0] = N0;
+        iceVol[start_bin][0][0] = N0 * v_nom[start_bin];
+
+        aer.RepartitionBoundaryOvershoot(0, 0, iceVol, icePart, H2O);
+
+        // Run 120 consecutive microphysics growth substeps (2 hours of 60s steps)
+        const double growth_factor = 1.025; // 2.5% per step
+        for (int step = 0; step < 120; ++step) {
+            auto cur_part = aer.Number();
+            auto cur_vol = aer.Volume();
+            // Apply growth to volume
+            for (UInt b = 0; b < nBins; ++b) {
+                cur_vol[b][0][0] *= growth_factor;
+            }
+            aer.RepartitionBoundaryOvershoot(0, 0, cur_vol, cur_part, H2O);
+        }
+
+        const auto& pdf = aer.getPDF();
+        double total_number = 0.0;
+        for (UInt b = 0; b < nBins; ++b) {
+            total_number += pdf[b][0][0] * (log_edges[b + 1] - log_edges[b]);
+        }
+        // Total particle number strictly conserved
+        REQUIRE(total_number == Catch::Approx(N0).epsilon(1.0e-10));
+
+        // Upper bins (bins 28-37, radii > 35 um) must have strictly ZERO particles!
+        // (In the flawed Eulerian splitting, these were populated up to bin 37 causing domain blowout)
+        for (UInt b = 28; b < nBins; ++b) {
+            REQUIRE(pdf[b][0][0] == 0.0);
+        }
+    }
+
+    SECTION("Sublimation: mass returned to vapor below smallest bin") {
+        Grid_Aerosol aer(1, 1, centers, edges, 0.0, 1.0, 1.6);
+        const auto& v_edges = aer.getBinVEdges();
+
+        const double N0 = 1.0e4;
+        const double V0 = N0 * (0.5 * v_edges[0]); // Shrunk below smallest bin
+        const double H2O_init = 1.0e14;
+
+        Vector_3D icePart(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_3D iceVol(nBins, Vector_2D(1, Vector_1D(1, 0.0)));
+        Vector_2D H2O(1, Vector_1D(1, H2O_init));
+
+        icePart[0][0][0] = N0;
+        iceVol[0][0][0] = V0;
+
+        aer.RepartitionBoundaryOvershoot(0, 0, iceVol, icePart, H2O);
+
+        // All crystals in bin 0 should have sublimated
+        const auto& pdf = aer.getPDF();
+        REQUIRE(pdf[0][0][0] == 0.0);
+
+        // Water vapor should increase by exactly V0 * UNITCONV
+        REQUIRE(H2O[0][0] == Catch::Approx(H2O_init + V0 * UNITCONV).epsilon(1.0e-12));
+    }
+}
+
+
